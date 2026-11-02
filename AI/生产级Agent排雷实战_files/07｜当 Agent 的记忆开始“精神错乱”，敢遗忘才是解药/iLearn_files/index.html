@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<!-- saved from url=(0146)https://ilearn.gientech.com/ossfile/courseware/KC202610145344/S202610218940/index.html?Expires=1793691963&Signature=FsgCshhw4fwiLRxierT9FdCfQ68%3D -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>极客时间企业版标准课件</title>
+<link rel="stylesheet" href="./player.css">
+</head>
+
+<body>
+
+<!-- 播放区域 -->
+<div id="wrapper">
+  <iframe id="courseFrame" allow="autoplay; fullscreen" allowfullscreen="" src="./101180601.html" style="width: 1200px; height: 800px; transform: scale(0.835); transform-origin: left top; margin-left: 0px; margin-top: 51.5px;"></iframe>
+</div>
+
+<script src="./scorm.js"></script>
+
+<script>
+/* =========================
+   1. 初始化 SCORM
+========================= */
+const progressSession = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+let frameClient = null;
+let activeVisit = null;
+let startupNotified = false;
+let progressStarted = false;
+let retryTimer = null;
+let closing = false;
+
+function publishProgress() {
+  if (!frameClient || !SCORM.getState().ready) return;
+  courseFrame.contentWindow.postMessage({
+    vendor: "geekbang", action: "scorm:state",
+    params: { courseID: "101180601", session: progressSession, clientId: frameClient, state: SCORM.getState(frameClient) },
+  }, GEEKBANG_ORIGIN);
+}
+
+function startProgress() {
+  const status = SCORM.getState().storageStatus;
+  if (!startupNotified && ["unavailable", "write_failed"].includes(status)) {
+    startupNotified = true;
+    window.alert("当前 LMS 暂时无法保存学习进度，你仍可继续学习，但下次进入时可能无法恢复本次进度。");
+  }
+  if (!progressStarted) {
+    progressStarted = true;
+    SCORM.startSession({ onStateChange: publishProgress });
+  }
+  publishProgress();
+}
+
+function initScormWithRetry() {
+  let attempts = 0;
+
+  function tryInit() {
+    if (closing) return;
+    attempts++;
+    console.log("[SCORM] init attempt", attempts);
+    const initialized = SCORM.init("101180601");
+    if (!initialized && attempts >= 20) {
+      SCORM.useTemporary("101180601");
+    }
+    if (SCORM.getState().ready) startProgress();
+    if (!SCORM.getState().historyReady) retryTimer = setTimeout(tryInit, attempts < 20 ? 500 : 5000);
+  }
+
+  tryInit();
+}
+
+/* =========================
+   2. iframe 加载课程
+========================= */
+const COURSE_URL = "https://b.geekbang.org/open/course/101180601?nocollect=1&autoplay=1&continueplay=1&show_catalog=1&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjb2RlIjoiZDc5NjI4MGZhNDQwNWEwYjQ4MjkzYTU1NTNkZThhYjZhMWE3NzljZSIsImV4cCI6MTgyNDkxMTk5OTAwMCwiZXh0cmEiOnsidmlkIjoiIiwiYWlkIjowLCJ1aWQiOjAsInMiOiJzY29ybS11c2VyIn0sInMiOjc1LCJ0IjoxLCJ2IjoxfQ.dabVuTPnIpE_ZZArRiSER4vHMf6fQjNum_z3Kx1Qljo";
+const GEEKBANG_ORIGIN = new URL(COURSE_URL).origin;
+const courseFrame = document.getElementById("courseFrame");
+const coursePlatform = detectCoursePlatform();
+
+function detectCoursePlatform() {
+  const params = new URLSearchParams(window.location.search);
+  const platform = params.get("platform");
+  if (platform === "pc" || platform === "h5") {
+    return platform;
+  }
+
+  const ua = navigator.userAgent || "";
+  const isMobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
+  const isIPadOS = /Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+  if (isMobileUa || isIPadOS) {
+    return "h5";
+  }
+  return "pc";
+}
+
+function buildCourseUrl() {
+  const url = new URL(COURSE_URL);
+  url.searchParams.set("platform", coursePlatform);
+  url.searchParams.set("pm", "parent");
+  url.searchParams.set("scorm", "3");
+  url.searchParams.set("scorm_origin", window.location.origin);
+  url.searchParams.set("scorm_session", progressSession);
+  return url.toString();
+}
+
+function handleCourseMessage(event) {
+  if (event.origin !== GEEKBANG_ORIGIN) return;
+  if (event.source !== courseFrame.contentWindow) return;
+
+  const message = event.data;
+  if (!message || message.vendor !== "geekbang") return;
+  const params = message.params || {};
+  if (String(params.courseID) !== "101180601") return;
+  if (typeof message.action !== "string") return;
+  if (message.action.startsWith("scorm:")) {
+    if (params.session !== progressSession || typeof params.clientId !== "string" || !params.clientId) return;
+    if (message.action === "scorm:ready") {
+      if (frameClient !== params.clientId) activeVisit = null;
+      frameClient = params.clientId;
+      if (SCORM.getState().ready && Array.isArray(params.ids)) SCORM.setCatalog(params.ids, params.optionalIds);
+      publishProgress();
+      return;
+    }
+    if (params.clientId !== frameClient || !SCORM.getState().ready) return;
+    if (message.action === "scorm:catalog") {
+      SCORM.setCatalog(params.ids, params.optionalIds);
+      publishProgress();
+    } else if (message.action === "scorm:visit") {
+      if (typeof params.visitId !== "string" || !params.visitId) return;
+      activeVisit = { id: String(params.articleID), visitId: params.visitId };
+    } else if (message.action === "scorm:progress" && activeVisit &&
+      activeVisit.id === String(params.articleID) && activeVisit.visitId === params.visitId) {
+      SCORM.updateSection(params);
+    }
+    return;
+  }
+  if (message.action !== "video:mounted") return;
+  courseFrame.contentWindow.postMessage("video:play", GEEKBANG_ORIGIN);
+}
+
+window.addEventListener("message", handleCourseMessage);
+courseFrame.src = buildCourseUrl();
+
+/* =========================
+   3. 自动缩放适配
+========================= */
+const DESIGN_WIDTH = 1200;
+const DESIGN_HEIGHT = 800;
+
+function resize() {
+  const iframe = document.getElementById("courseFrame");
+  const wrapper = document.getElementById("wrapper");
+
+  if (coursePlatform === "h5") {
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.transform = "none";
+    iframe.style.marginLeft = "0px";
+    iframe.style.marginTop = "0px";
+    return;
+  }
+
+  const w = wrapper.clientWidth;
+  const h = wrapper.clientHeight;
+
+  if (w >= DESIGN_WIDTH) {
+    // 超过或等于 1200 宽度时，不进行缩放，直接展示 100%
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.transform = "none";
+    iframe.style.marginLeft = "0px";
+    iframe.style.marginTop = "0px";
+  } else {
+    // 不足 1200 宽度时，按比例缩放并居中
+    const scale = Math.min(w / DESIGN_WIDTH, h / DESIGN_HEIGHT);
+
+    iframe.style.width = DESIGN_WIDTH + "px";
+    iframe.style.height = DESIGN_HEIGHT + "px";
+    iframe.style.transform = `scale(${scale})`;
+    iframe.style.transformOrigin = "top left";
+
+    iframe.style.marginLeft = (w - DESIGN_WIDTH * scale) / 2 + "px";
+    iframe.style.marginTop = (h - DESIGN_HEIGHT * scale) / 2 + "px";
+  }
+}
+
+window.addEventListener("resize", resize);
+window.addEventListener("load", resize);
+window.addEventListener("pagehide", (event) => {
+  // 缓存中的页面还会恢复，保留未成功初始化的 LMS 重试。
+  if (event.persisted) return;
+  closing = true;
+  clearTimeout(retryTimer);
+});
+// 不等待 iframe 内的图片等资源触发 load，避免资源慢请求拖住握手。
+initScormWithRetry();
+</script>
+
+
+
+</body></html>

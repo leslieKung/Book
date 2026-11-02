@@ -1,0 +1,23 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: Arial, sans-serif;
+  background: #fff;
+}
+
+/* 播放区 */
+#wrapper {
+  height: 100%;
+  background: #fff; /* 去除黑边，改为白色或透明 */
+  overflow: hidden;
+  position: relative;
+}
+
+/* iframe */
+#courseFrame {
+  border: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
